@@ -6,3 +6,4 @@
 *.lib -text -diff -merge
 *.exe -text -diff -merge
 *.bin -text -diff -merge
+*.png -text -diff -merge
