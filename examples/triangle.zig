@@ -26,9 +26,7 @@ const state = struct {
     var pipeline: sg.Pipeline = .{};
 };
 
-var debug_allocator = std.heap.DebugAllocator(.{}).init;
 var allocator: std.mem.Allocator = undefined;
-var threaded: std.Io.Threaded = undefined;
 var io: std.Io = undefined;
 
 var window: wio.Window = undefined;
@@ -37,16 +35,13 @@ var framebuffer_size: wio.Size = .{ .width = 640, .height = 480 };
 var fps_last_report_ms: ?i64 = null;
 var fps_frame_count: u32 = 0;
 
-pub fn main() !void {
-    allocator = debug_allocator.allocator();
-    threaded = std.Io.Threaded.init(allocator, .{});
-    io = threaded.io();
+pub fn main(init: std.process.Init) !void {
+    allocator = init.gpa;
+    io = init.io;
 
     try wio.init(allocator, io, .{});
     errdefer {
         wio.deinit();
-        threaded.deinit();
-        _ = debug_allocator.deinit();
     }
 
     window = try wio.createWindow(.{
@@ -83,8 +78,6 @@ fn loop() !bool {
                 context.destroy();
                 window.destroy();
                 wio.deinit();
-                threaded.deinit();
-                _ = debug_allocator.deinit();
                 return false;
             },
             .size_physical => |size| framebuffer_size = size,
