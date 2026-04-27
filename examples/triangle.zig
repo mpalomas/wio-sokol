@@ -59,7 +59,7 @@ pub fn main() !void {
     context = try window.glCreateContext(.{ .options = gl_options });
     errdefer context.destroy();
 
-    window.glMakeContextCurrent(&context);
+    window.glMakeContextCurrent(context);
     window.glSwapInterval(0);
 
     sg.setup(.{
@@ -92,7 +92,7 @@ fn loop() !bool {
         }
     }
 
-    window.glMakeContextCurrent(&context);
+    window.glMakeContextCurrent(context);
     drawTriangle();
     window.glSwapBuffers();
     return true;
@@ -101,8 +101,8 @@ fn loop() !bool {
 fn initTriangle() void {
     state.bindings.vertex_buffers[0] = sg.makeBuffer(.{
         .data = sg.asRange(&[_]f32{
-            0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0,
-            0.5, -0.5, 0.5, 0.0, 1.0, 0.0, 1.0,
+            0.0,  0.5,  0.5, 1.0, 0.0, 0.0, 1.0,
+            0.5,  -0.5, 0.5, 0.0, 1.0, 0.0, 1.0,
             -0.5, -0.5, 0.5, 0.0, 0.0, 1.0, 1.0,
         }),
     });
