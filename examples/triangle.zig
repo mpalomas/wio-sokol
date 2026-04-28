@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
         defer display.release();
         if (display.getCurrentMode()) |mode| {
             if (mode.refresh_rate.numerator != 0) {
-                std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} pixel {}x{} @ {d:.3}Hz ({}/{})", .{
+                std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} -> {}x{} pixels @ {d:.4}Hz ({}/{})", .{
                     display_index,
                     mode.bounds.width,
                     mode.bounds.height,
@@ -85,7 +85,7 @@ pub fn main(init: std.process.Init) !void {
                     mode.refresh_rate.denominator,
                 });
             } else {
-                std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} pixel {}x{} @ {d:.3}Hz", .{
+                std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} -> {}x{} pixels @ {d:.3}Hz", .{
                     display_index,
                     mode.bounds.width,
                     mode.bounds.height,
