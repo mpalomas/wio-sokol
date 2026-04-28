@@ -16,7 +16,7 @@ pub fn build(b: *Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const unix_backends = b.option([]const u8, "unix_backends", "List of enabled wio backends");
 
-    const dep_wio = b.dependency("wio", .{
+    const dep_wio = b.dependency("wio_extra", .{
         .target = target,
         .optimize = optimize,
         .enable_opengl = true,

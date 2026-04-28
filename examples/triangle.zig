@@ -63,6 +63,44 @@ pub fn main(init: std.process.Init) !void {
     });
     errdefer sg.shutdown();
 
+    // display information
+    var display_iter = wio.DisplayIterator.init();
+    defer display_iter.deinit();
+    var display_index: usize = 0;
+    while (display_iter.next()) |display| {
+        defer display.release();
+        if (display.getCurrentMode()) |mode| {
+            if (mode.refresh_rate.numerator != 0) {
+                std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} pixel {}x{} @ {d:.3}Hz ({}/{})", .{
+                    display_index,
+                    mode.bounds.width,
+                    mode.bounds.height,
+                    mode.bounds.x,
+                    mode.bounds.y,
+                    mode.content_scale,
+                    mode.pixel_width,
+                    mode.pixel_height,
+                    mode.refresh_rate.hz,
+                    mode.refresh_rate.numerator,
+                    mode.refresh_rate.denominator,
+                });
+            } else {
+                std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} pixel {}x{} @ {d:.3}Hz", .{
+                    display_index,
+                    mode.bounds.width,
+                    mode.bounds.height,
+                    mode.bounds.x,
+                    mode.bounds.y,
+                    mode.content_scale,
+                    mode.pixel_width,
+                    mode.pixel_height,
+                    mode.refresh_rate.hz,
+                });
+            }
+        }
+        display_index += 1;
+    }
+
     std.log.info("sokol backend: {}", .{sg.queryBackend()});
 
     initTriangle();

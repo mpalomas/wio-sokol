@@ -4,9 +4,9 @@
     .fingerprint = 0x29d849c00d09a9a, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        .wio = .{
-            .url = "git+https://github.com/ypsvlq/wio.git#229047edbad5a42130afd634ad7a13b9c89c765e",
-            .hash = "wio-0.0.0-8xHrr6QfBwCoHmXAnPlNKToqos1ykyY3RtMuhw0RYHkn",
+        .wio_extra = .{
+            .url = "https://github.com/mpalomas/wio-extra/archive/9e7bcd3547f7f6f782a43707e12cebd1028818ff.zip",
+            .hash = "wio_extra-0.0.0-PBpspMxaBwBub6RN93If269MMOsLL9BRd4lB3CJo4ffZ",
         },
         .sokol = .{
             .url = "git+https://github.com/floooh/sokol-zig.git#943c35e3a3437c1e3aec31ac002527cbc132be25",
