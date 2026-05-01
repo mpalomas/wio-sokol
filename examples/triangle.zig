@@ -31,9 +31,8 @@ var io: std.Io = undefined;
 
 var window: wio.Window = undefined;
 var context: wio.GlContext = undefined;
-// 1280x720 => 1113x626
-var framebuffer_size: wio.Size = .{ .width = 1280, .height = 720 };
-// var framebuffer_size: wio.Size = .{ .width = 1114, .height = 627 };
+const desired_framebuffer_size: wio.Size = .{ .width = 1280, .height = 720 };
+var framebuffer_size: wio.Size = desired_framebuffer_size;
 var fps_last_report_ms: ?i64 = null;
 var fps_frame_count: u32 = 0;
 
@@ -46,14 +45,22 @@ pub fn main(init: std.process.Init) !void {
         wio.deinit();
     }
 
-    std.log.info("createWindow with size {}x{}", .{
-        framebuffer_size.width,
-        framebuffer_size.height,
+    // Before a window exists we can only estimate which output scale will apply.
+    // Use the first enumerated display as a best-effort guess for the initial size.
+    const display_scale = logDisplaysAndGetInitialScale();
+    const initial_window_size = logicalWindowSizeForFramebuffer(desired_framebuffer_size, display_scale);
+
+    std.log.info("desired framebuffer {}x{} at scale {d:.4} -> createWindow size {}x{}", .{
+        desired_framebuffer_size.width,
+        desired_framebuffer_size.height,
+        display_scale,
+        initial_window_size.width,
+        initial_window_size.height,
     });
     window = try wio.createWindow(.{
         .title = "wio + sokol_gfx triangle",
         .scale = 1,
-        .size = framebuffer_size,
+        .size = initial_window_size,
         .gl_options = gl_options,
     });
     errdefer window.destroy();
@@ -70,13 +77,26 @@ pub fn main(init: std.process.Init) !void {
     });
     errdefer sg.shutdown();
 
-    // display information
+    std.log.info("sokol backend: {}", .{sg.queryBackend()});
+
+    initTriangle();
+
+    try wio.run(loop);
+}
+
+fn logDisplaysAndGetInitialScale() f64 {
     var display_iter = wio.DisplayIterator.init();
     defer display_iter.deinit();
+
+    var initial_scale: f64 = 1.0;
     var display_index: usize = 0;
     while (display_iter.next()) |display| {
         defer display.release();
         if (display.getCurrentMode()) |mode| {
+            if (display_index == 0 and mode.content_scale > 0) {
+                initial_scale = mode.content_scale;
+            }
+
             if (mode.refresh_rate.numerator != 0) {
                 std.log.info("display {}: {}x{} at ({},{}) scale {d:.2} -> {}x{} pixels @ {d:.4}Hz ({}/{})", .{
                     display_index,
@@ -108,11 +128,44 @@ pub fn main(init: std.process.Init) !void {
         display_index += 1;
     }
 
-    std.log.info("sokol backend: {}", .{sg.queryBackend()});
+    return initial_scale;
+}
 
-    initTriangle();
+fn logicalWindowSizeForFramebuffer(target: wio.Size, scale: f64) wio.Size {
+    return .{
+        .width = logicalAxisForFramebuffer(target.width, scale),
+        .height = logicalAxisForFramebuffer(target.height, scale),
+    };
+}
 
-    try wio.run(loop);
+fn logicalAxisForFramebuffer(target: u16, scale: f64) u16 {
+    if (target == 0) return 0;
+
+    const safe_scale = if (std.math.isFinite(scale) and scale > 0) scale else 1.0;
+    const target_f64: f64 = @floatFromInt(target);
+
+    // Start from ceil(target / scale) so the ideal scaled size is not below target.
+    // The backend converts logical -> physical with truncation, so verify explicitly
+    // and adjust upward if floating-point rounding would otherwise undershoot.
+    var logical: u32 = @intFromFloat(@ceil(target_f64 / safe_scale));
+    if (logical == 0) logical = 1;
+
+    while (scaledAxis(@intCast(logical), safe_scale) < target) {
+        logical += 1;
+    }
+    // Keep the result minimal: allow overshoot like 1281, but avoid requesting a
+    // larger logical size than necessary once the scaled size already reaches target.
+    while (logical > 1 and scaledAxis(@intCast(logical - 1), safe_scale) >= target) {
+        logical -= 1;
+    }
+
+    return @intCast(logical);
+}
+
+fn scaledAxis(logical: u16, scale: f64) u16 {
+    const logical_f64: f64 = @floatFromInt(logical);
+    const scaled = logical_f64 * scale;
+    return @intFromFloat(scaled);
 }
 
 fn loop() !bool {
