@@ -24,4 +24,12 @@ zig build -Doptimize=ReleaseSmall examples
 zig build -Doptimize=ReleaseSmall run-triangle
 ```
 
+```sh
+zig build --fork=/home/michael/dev/zig/wio-extra run-triangle
+info: fork /home/michael/dev/zig/wio-extra matched 1 wio_extra packages
+info: display 0: 2226x1252 at (0,0) scale 1.15 -> 2560x1440 pixels @ 119.9980Hz (59999/500)
+info: display 1: 2226x1252 at (2227,0) scale 1.15 -> 2560x1440 pixels @ 119.9980Hz (59999/500)
+```
+
+
 ![alt text](images/triangle.png)
