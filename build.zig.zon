@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .wio_extra = .{
-            .url = "https://github.com/mpalomas/wio-extra/archive/0c8b7ec77c4987833249f4a8010a5edb251ff52f.zip",
-            .hash = "wio_extra-0.0.0-PBpspNlaBwC4makk9Ma3d0NQEQaHzFYPH3kw39pUDVvJ",
+            .url = "https://github.com/mpalomas/wio-extra/archive/d778339107d161f681b312ca06ab45380965d7b9.zip",
+            .hash = "wio_extra-0.0.0-PBpspItNCABGiV592pNZhc0kbDbNKfpqYuz93GKbfxpL",
         },
         .sokol = .{
             .url = "git+https://github.com/floooh/sokol-zig.git#87b01b9a79c2cb8752d956e9962fc46bf8b29627",
