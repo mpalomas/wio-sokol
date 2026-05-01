@@ -31,7 +31,9 @@ var io: std.Io = undefined;
 
 var window: wio.Window = undefined;
 var context: wio.GlContext = undefined;
-var framebuffer_size: wio.Size = .{ .width = 640, .height = 480 };
+// 1280x720 => 1113x626
+var framebuffer_size: wio.Size = .{ .width = 1280, .height = 720 };
+// var framebuffer_size: wio.Size = .{ .width = 1114, .height = 627 };
 var fps_last_report_ms: ?i64 = null;
 var fps_frame_count: u32 = 0;
 
@@ -44,9 +46,14 @@ pub fn main(init: std.process.Init) !void {
         wio.deinit();
     }
 
+    std.log.info("createWindow with size {}x{}", .{
+        framebuffer_size.width,
+        framebuffer_size.height,
+    });
     window = try wio.createWindow(.{
         .title = "wio + sokol_gfx triangle",
         .scale = 1,
+        .size = framebuffer_size,
         .gl_options = gl_options,
     });
     errdefer window.destroy();
@@ -118,7 +125,13 @@ fn loop() !bool {
                 wio.deinit();
                 return false;
             },
-            .size_physical => |size| framebuffer_size = size,
+            .size_physical => |size| {
+                framebuffer_size = size;
+                std.log.info("framebuffer_size {}x{}", .{
+                    size.width,
+                    size.height,
+                });
+            },
             else => {},
         }
     }
