@@ -1,5 +1,6 @@
 const std = @import("std");
 const wio = @import("wio");
+const wiox = @import("wiox");
 const sokol = @import("sokol");
 const wio_sokol_gl = @import("wio_sokol_gl");
 const sg = sokol.gfx;
@@ -65,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
     });
     errdefer window.destroy();
 
-    if (window.getDisplay()) |display| {
+    if (wiox.display.getWindowDisplay(&window)) |display| {
         defer display.release();
 
         const actual_scale = logDisplay("window display", display) orelse display.getContentScale();
@@ -105,7 +106,7 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn logDisplaysAndGetInitialScale() f64 {
-    var display_iter = wio.DisplayIterator.init();
+    var display_iter = wiox.display.DisplayIterator.init();
     defer display_iter.deinit();
 
     var initial_scale: f64 = 1.0;
@@ -151,7 +152,7 @@ fn logDisplaysAndGetInitialScale() f64 {
     return initial_scale;
 }
 
-fn logDisplay(label: []const u8, display: wio.Display) ?f64 {
+fn logDisplay(label: []const u8, display: wiox.display.Display) ?f64 {
     if (display.getCurrentMode()) |mode| {
         if (mode.refresh_rate.numerator != 0) {
             std.log.info("{s}: {}x{} at ({},{}) scale {d:.2} -> {}x{} pixels @ {d:.4}Hz ({}/{})", .{

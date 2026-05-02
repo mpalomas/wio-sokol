@@ -69,6 +69,7 @@ fn buildExample(b: *Build, options: BuildExampleOptions) !void {
         .optimize = options.optimize,
         .imports = &.{
             .{ .name = "wio", .module = options.dep_wio.module("wio") },
+            .{ .name = "wiox", .module = options.dep_wio.module("wiox") },
             .{ .name = "sokol", .module = options.dep_sokol.module("sokol") },
             .{ .name = "wio_sokol_gl", .module = options.mod_wio_sokol_gl },
         },
