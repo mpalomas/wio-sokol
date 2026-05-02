@@ -65,6 +65,26 @@ pub fn main(init: std.process.Init) !void {
     });
     errdefer window.destroy();
 
+    if (window.getDisplay()) |display| {
+        defer display.release();
+
+        const actual_scale = logDisplay("window display", display) orelse display.getContentScale();
+        const actual_window_size = logicalWindowSizeForFramebuffer(desired_framebuffer_size, actual_scale);
+
+        if (!sizeEql(actual_window_size, initial_window_size)) {
+            std.log.info("resize window for desired framebuffer {}x{} at scale {d:.4} -> {}x{}", .{
+                desired_framebuffer_size.width,
+                desired_framebuffer_size.height,
+                actual_scale,
+                actual_window_size.width,
+                actual_window_size.height,
+            });
+            window.setSize(actual_window_size);
+        }
+    } else {
+        std.log.info("window display: unavailable", .{});
+    }
+
     context = try window.glCreateContext(.{ .options = gl_options });
     errdefer context.destroy();
 
@@ -131,11 +151,51 @@ fn logDisplaysAndGetInitialScale() f64 {
     return initial_scale;
 }
 
+fn logDisplay(label: []const u8, display: wio.Display) ?f64 {
+    if (display.getCurrentMode()) |mode| {
+        if (mode.refresh_rate.numerator != 0) {
+            std.log.info("{s}: {}x{} at ({},{}) scale {d:.2} -> {}x{} pixels @ {d:.4}Hz ({}/{})", .{
+                label,
+                mode.bounds.width,
+                mode.bounds.height,
+                mode.bounds.x,
+                mode.bounds.y,
+                mode.content_scale,
+                mode.pixel_width,
+                mode.pixel_height,
+                mode.refresh_rate.hz,
+                mode.refresh_rate.numerator,
+                mode.refresh_rate.denominator,
+            });
+        } else {
+            std.log.info("{s}: {}x{} at ({},{}) scale {d:.2} -> {}x{} pixels @ {d:.3}Hz", .{
+                label,
+                mode.bounds.width,
+                mode.bounds.height,
+                mode.bounds.x,
+                mode.bounds.y,
+                mode.content_scale,
+                mode.pixel_width,
+                mode.pixel_height,
+                mode.refresh_rate.hz,
+            });
+        }
+        return mode.content_scale;
+    }
+
+    std.log.info("{s}: current mode unavailable", .{label});
+    return null;
+}
+
 fn logicalWindowSizeForFramebuffer(target: wio.Size, scale: f64) wio.Size {
     return .{
         .width = logicalAxisForFramebuffer(target.width, scale),
         .height = logicalAxisForFramebuffer(target.height, scale),
     };
+}
+
+fn sizeEql(a: wio.Size, b: wio.Size) bool {
+    return a.width == b.width and a.height == b.height;
 }
 
 fn logicalAxisForFramebuffer(target: u16, scale: f64) u16 {
