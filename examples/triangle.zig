@@ -3,6 +3,7 @@ const wio = @import("wio");
 const wiox = @import("wiox");
 const sokol = @import("sokol");
 const wio_sokol_gl = @import("wio_sokol_gl");
+const frame_pacing = @import("frame_pacing");
 const sg = sokol.gfx;
 const slog = sokol.log;
 const shd = @import("shaders/triangle.glsl.zig");
@@ -32,10 +33,10 @@ var io: std.Io = undefined;
 
 var window: wio.Window = undefined;
 var context: wio.GlContext = undefined;
+var pacer: frame_pacing.FramePacer = undefined;
 const desired_framebuffer_size: wio.Size = .{ .width = 1280, .height = 720 };
 var framebuffer_size: wio.Size = desired_framebuffer_size;
 var fps_last_report_ms: ?i64 = null;
-var fps_frame_count: u32 = 0;
 
 pub fn main(init: std.process.Init) !void {
     allocator = init.gpa;
@@ -101,6 +102,19 @@ pub fn main(init: std.process.Init) !void {
     std.log.info("sokol backend: {}", .{sg.queryBackend()});
 
     initTriangle();
+    pacer = frame_pacing.FramePacer.init(io, .{
+        .tick_rate_hz = 60.0,
+        .mode = .unlocked,
+        .frame_cap_hz = 60.0,
+        .sleep_mode = .hybrid,
+        .passive_sleep_margin_ns = 2 * std.time.ns_per_ms,
+    });
+    if (pacer.detectDisplayRefreshRate(&window)) {
+        const quality = pacer.quality();
+        std.log.info("frame pacer display rate: {d:.4}Hz", .{quality.display_rate_hz});
+    } else {
+        std.log.info("frame pacer display rate: unavailable", .{});
+    }
 
     try wio.run(loop);
 }
@@ -230,6 +244,8 @@ fn scaledAxis(logical: u16, scale: f64) u16 {
 }
 
 fn loop() !bool {
+    pacer.beginFrame();
+
     while (window.getEvent()) |event| {
         switch (event) {
             .close => {
@@ -250,9 +266,14 @@ fn loop() !bool {
         }
     }
 
+    while (pacer.shouldUpdate()) {
+        // Fixed-rate simulation would run here. The triangle has no game state.
+    }
+
     window.glMakeContextCurrent(context);
     drawTriangle();
     window.glSwapBuffers();
+    pacer.endFrame();
     return true;
 }
 
@@ -296,13 +317,17 @@ fn logFps() void {
     const now = std.Io.Clock.awake.now(io).toMilliseconds();
     if (fps_last_report_ms == null) fps_last_report_ms = now;
 
-    fps_frame_count += 1;
-
     const elapsed_ms = now - fps_last_report_ms.?;
     if (elapsed_ms >= 1_000) {
-        const fps = @divTrunc(@as(i64, fps_frame_count) * 1_000, elapsed_ms);
-        std.log.info("fps {}", .{fps});
-        fps_frame_count = 0;
+        const stats = pacer.stats();
+        const quality = pacer.quality();
+        std.log.info("fps {d:.1} frame {d:.3}ms low1 {d:.1} dup {d:.3}% drift {d:.3}ms", .{
+            stats.avg_fps,
+            stats.avg_frame_time_s * 1_000.0,
+            stats.low1_fps,
+            quality.unexpected_duplicate_ratio * 100.0,
+            quality.drift_seconds * 1_000.0,
+        });
         fps_last_report_ms = now;
     }
 }

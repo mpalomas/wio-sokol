@@ -36,6 +36,22 @@ pub fn build(b: *Build) void {
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
         },
     });
+    const mod_frame_pacing = b.addModule("frame_pacing", .{
+        .root_source_file = b.path("src/frame_pacing.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "wio", .module = dep_wio.module("wio") },
+            .{ .name = "wiox", .module = dep_wio.module("wiox") },
+        },
+    });
+
+    const test_step = b.step("test", "Run unit tests");
+    const frame_pacing_tests = b.addTest(.{
+        .root_module = mod_frame_pacing,
+    });
+    test_step.dependOn(&b.addRunArtifact(frame_pacing_tests).step);
+
     const examples_step = b.step("examples", "Build all examples");
 
     inline for (examples) |example| {
@@ -46,6 +62,7 @@ pub fn build(b: *Build) void {
             .dep_wio = dep_wio,
             .dep_sokol = dep_sokol,
             .mod_wio_sokol_gl = mod_wio_sokol_gl,
+            .mod_frame_pacing = mod_frame_pacing,
             .examples_step = examples_step,
         }) catch @panic("failed to build example");
     }
@@ -58,6 +75,7 @@ const BuildExampleOptions = struct {
     dep_wio: *Build.Dependency,
     dep_sokol: *Build.Dependency,
     mod_wio_sokol_gl: *Build.Module,
+    mod_frame_pacing: *Build.Module,
     examples_step: *Build.Step,
 };
 
@@ -72,6 +90,7 @@ fn buildExample(b: *Build, options: BuildExampleOptions) !void {
             .{ .name = "wiox", .module = options.dep_wio.module("wiox") },
             .{ .name = "sokol", .module = options.dep_sokol.module("sokol") },
             .{ .name = "wio_sokol_gl", .module = options.mod_wio_sokol_gl },
+            .{ .name = "frame_pacing", .module = options.mod_frame_pacing },
         },
     });
 
