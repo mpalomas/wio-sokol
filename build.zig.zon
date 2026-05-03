@@ -5,12 +5,12 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .wio_extra = .{
-            .url = "https://github.com/mpalomas/wio-extra/archive/3f2a7917546dcd93f1d490161562a8d52feaad76.zip",
-            .hash = "wio_extra-0.0.0-PBpspOqtCAAVwRf2xhVf-I9JVMzrPkvWmPc1dbhdLqjR",
+            .url = "https://github.com/mpalomas/wio-extra/archive/6b6a377400316165f3e077d9ade55de1efad63a8.zip",
+            .hash = "wio_extra-0.0.0-PBpspOGtCAB8DoDJro0wTIi8-ro67-wdupykLxCMb8_A",
         },
         .sokol = .{
-            .url = "git+https://github.com/floooh/sokol-zig.git#87b01b9a79c2cb8752d956e9962fc46bf8b29627",
-            .hash = "sokol-0.1.0-pb1HK_hXNwDoSEEXvS-YkRvCv3wArtDsjUjzsid4WaGd",
+            .url = "git+https://github.com/floooh/sokol-zig.git#870e1a922a7c5f6f717d3d6bc85dc23011c48b9a",
+            .hash = "sokol-0.1.0-pb1HK2lYNwBA-m0pT4bY8rP9mgeMUZW94gMH_ZITFHc6",
         },
         .shdc = .{
             .url = "git+https://github.com/floooh/sokol-tools-bin#1a9a4e54090fec42c5d13169b638f09f25474953",

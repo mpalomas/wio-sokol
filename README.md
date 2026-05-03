@@ -26,9 +26,14 @@ zig build -Doptimize=ReleaseSmall run-triangle
 
 ```sh
 zig build --fork=/home/michael/dev/zig/wio-extra run-triangle
+(zig build --fork=/Users/mpalomas/dev/zig/wio-extra run-triangle)
 info: fork /home/michael/dev/zig/wio-extra matched 1 wio_extra packages
-info: display 0: 2226x1252 at (0,0) scale 1.15 -> 2560x1440 pixels @ 119.9980Hz (59999/500)
-info: display 1: 2226x1252 at (2227,0) scale 1.15 -> 2560x1440 pixels @ 119.9980Hz (59999/500)
+info: display 0: 1512x982 at (0,0) scale 2.00 -> 3024x1964 pixels @ 120.0006Hz (24000000/199999)
+info: desired framebuffer 1280x720 at scale 2.0000 -> createWindow size 640x360
+info: window display: 1512x982 at (0,0) scale 2.00 -> 3024x1964 pixels @ 120.0006Hz (24000000/199999)
+info: sokol backend: .GLCORE
+info: framebuffer_size 1280x720
+info: fps 3414
 ```
 
 
