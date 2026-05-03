@@ -11,73 +11,134 @@ const spiral_threshold = 8;
 const stats_window = 300;
 const max_rolling_window = 16;
 
+/// Fixed-update scheduling mode.
 pub const Mode = enum {
+    /// Run either zero updates or exactly `update_multiplicity` updates when
+    /// enough time has accumulated. This is simple and deterministic, but can
+    /// duplicate rendered state when update and presentation rates differ.
     locked,
+    /// Drain the accumulator in fixed-size update steps and expose the leftover
+    /// fraction through `interpolationAlpha()`. Prefer this when render and
+    /// simulation rates may differ.
     unlocked,
 };
 
+/// Strategy used by `endFrame()` when enforcing `frame_cap_hz`.
 pub const SleepMode = enum {
+    /// Do not sleep or spin. The frame cap is effectively disabled.
     none,
+    /// Use only `std.Io.sleep`. Lowest CPU cost, lowest precision.
     passive,
+    /// Sleep for the coarse part of the wait, then spin until the deadline.
+    /// This is the recommended software frame-cap mode.
     hybrid,
+    /// Busy-wait until the deadline. Highest precision, high CPU/battery cost.
     spin,
 };
 
+/// Rolling-average smoothing settings.
 pub const RollingConfig = struct {
+    /// Number of frame deltas to average. Values are clamped to `1...16`.
     window: u8 = 4,
 };
 
+/// Exponential moving average smoothing settings, matching Sokol defaults.
 pub const EmaConfig = struct {
+    /// EMA coefficient. Lower is smoother; higher reacts faster.
     alpha: f64 = 0.025,
+    /// If the new sample differs from the smoothed value by more than this,
+    /// reset the filter to the new sample instead of blending.
     reset_threshold_ns: i64 = 4 * std.time.ns_per_ms,
+    /// Minimum accepted delta before filtering.
     min_dt_ns: i64 = 1 * std.time.ns_per_us,
+    /// Maximum accepted delta before filtering.
     max_dt_ns: i64 = 100 * std.time.ns_per_ms,
 };
 
+/// Frame delta smoothing strategy.
 pub const Smoothing = union(enum) {
+    /// Use measured/snapped deltas directly.
     none,
+    /// Use a rolling average with integer residual correction to prevent drift.
     rolling: RollingConfig,
+    /// Use a Sokol-style exponential moving average.
     ema: EmaConfig,
 };
 
+/// Frame pacer configuration. Zero/default initialization gives a 60Hz locked
+/// pacer with rolling smoothing, vsync snapping enabled, no frame cap, and
+/// hybrid sleep if a cap is later configured.
 pub const Desc = struct {
+    /// Fixed simulation update rate in Hz. Invalid values fall back to 60Hz.
     tick_rate_hz: f64 = 60.0,
+    /// Fixed-update scheduling mode.
     mode: Mode = .locked,
+    /// Number of updates to run per eligible frame in `.locked` mode.
     update_multiplicity: u32 = 1,
+    /// Snap measured deltas to display refresh harmonics when a display rate is known.
     vsync_snap: bool = true,
+    /// Delta smoothing mode.
     smoothing: Smoothing = .{ .rolling = .{} },
+    /// Maximum difference from a display harmonic for vsync snapping.
     snap_tolerance_ns: i64 = 200 * std.time.ns_per_us,
+    /// Software frame cap in Hz. `0` disables the cap.
     frame_cap_hz: f64 = 0.0,
+    /// Sleep/spin strategy used by `endFrame()` when the frame cap is active.
     sleep_mode: SleepMode = .hybrid,
+    /// Initial/floor margin before the cap deadline reserved for spinning.
     passive_sleep_margin_ns: i64 = 1 * std.time.ns_per_ms,
+    /// Minimum spin-only interval near the cap deadline.
     spin_threshold_ns: i64 = 200 * std.time.ns_per_us,
 };
 
+/// Frame-time statistics over the pacer's fixed-size stats window.
 pub const Stats = struct {
+    /// Average rendered frames per second.
     avg_fps: f64 = 0,
+    /// Average raw frame duration in seconds.
     avg_frame_time_s: f64 = 0,
+    /// FPS computed from the average of the worst 1% frame durations.
     low1_fps: f64 = 0,
+    /// FPS computed from the average of the worst 0.1% frame durations.
     low01_fps: f64 = 0,
+    /// Average duration of the worst 1% frames, in seconds.
     low1_frame_time_s: f64 = 0,
+    /// Average duration of the worst 0.1% frames, in seconds.
     low01_frame_time_s: f64 = 0,
+    /// Worst raw frame duration seen since init or `resetStats()`.
     worst_frame_time_s: f64 = 0,
+    /// Standard deviation of raw frame durations in seconds.
     frame_time_stddev_s: f64 = 0,
+    /// Number of valid samples in the stats window.
     sample_count: u32 = 0,
 };
 
+/// Pacing-quality metrics.
 pub const Quality = struct {
+    /// Total frames processed by `beginFrame()`.
     total_frames: u64 = 0,
+    /// Total fixed updates consumed by `shouldUpdate()`.
     total_updates: u64 = 0,
+    /// Frames where zero fixed updates ran.
     zero_update_frames: u64 = 0,
+    /// Frames where more than one fixed update ran.
     multi_update_frames: u64 = 0,
+    /// Longest consecutive run of zero-update frames.
     max_zero_update_streak: u32 = 0,
+    /// Raw duplicate ratio: `zero_update_frames / total_frames`.
     duplicate_ratio: f64 = 0,
+    /// Duplicate ratio expected from a lower tick rate than display rate.
     expected_duplicate_ratio: f64 = 0,
+    /// Duplicate ratio above the expected rate.
     unexpected_duplicate_ratio: f64 = 0,
+    /// Committed-update drift: wall time minus `total_updates * fixed_dt`.
+    /// In `.unlocked` mode this intentionally ignores the accumulator remainder.
     drift_seconds: f64 = 0,
+    /// Detected display refresh rate, or zero if unknown.
     display_rate_hz: f64 = 0,
 };
 
+/// Stateful frame pacer for a manual game/render loop.
 pub const FramePacer = struct {
     io: std.Io,
     mode: Mode,
@@ -125,6 +186,7 @@ pub const FramePacer = struct {
     frame_duration_index: u32 = 0,
     worst_frame_duration_ns: i64 = 0,
 
+    /// Initialize a frame pacer from a descriptor.
     pub fn init(io: std.Io, desc: Desc) FramePacer {
         const now = nowNs(io);
         var pacer = FramePacer{
@@ -148,6 +210,8 @@ pub const FramePacer = struct {
         return pacer;
     }
 
+    /// Begin a new frame: measure elapsed time, snap/smooth it, update the
+    /// accumulator, and precompute how many fixed updates are available.
     pub fn beginFrame(self: *FramePacer) void {
         const now = nowNs(self.io);
         const delta = now - self.previous_ns;
@@ -156,6 +220,8 @@ pub const FramePacer = struct {
         self.frame_start_ns = now;
     }
 
+    /// Return true while a fixed simulation update should run.
+    /// Each true result consumes one fixed timestep from the accumulator.
     pub fn shouldUpdate(self: *FramePacer) bool {
         switch (self.mode) {
             .unlocked => {
@@ -179,47 +245,58 @@ pub const FramePacer = struct {
         }
     }
 
+    /// Finish a frame: record pacing quality and enforce the configured frame cap.
     pub fn endFrame(self: *FramePacer) void {
         self.recordPacingQuality();
         self.sleepToFrameCap();
     }
 
+    /// Fixed simulation timestep in seconds.
     pub fn fixedDt(self: *const FramePacer) f64 {
         return nsToSeconds(self.desired_frame_ns);
     }
 
+    /// Smoothed/snapped frame delta in seconds.
     pub fn frameDt(self: *const FramePacer) f64 {
         return nsToSeconds(self.frame_delta_ns);
     }
 
+    /// Raw measured frame delta in seconds before snapping and smoothing.
     pub fn rawDt(self: *const FramePacer) f64 {
         return nsToSeconds(self.raw_frame_ns);
     }
 
+    /// Fractional accumulator remainder for render interpolation.
+    /// Always returns zero in `.locked` mode.
     pub fn interpolationAlpha(self: *const FramePacer) f64 {
         if (self.mode == .locked or self.desired_frame_ns <= 0) return 0;
         return @as(f64, @floatFromInt(self.accumulator_ns)) / @as(f64, @floatFromInt(self.desired_frame_ns));
     }
 
+    /// Instantaneous FPS from the current smoothed frame delta.
     pub fn fps(self: *const FramePacer) f64 {
         const dt = self.frameDt();
         return if (dt > 0) 1.0 / dt else 0;
     }
 
+    /// Current fixed update rate in Hz.
     pub fn tickRate(self: *const FramePacer) f64 {
         return nsToHz(self.desired_frame_ns);
     }
 
+    /// Number of fixed updates available for the current frame.
     pub fn updateCount(self: *const FramePacer) u32 {
         return self.updates_this_frame;
     }
 
+    /// Change fixed update rate and resync timing state.
     pub fn setTickRate(self: *FramePacer, hz: f64) void {
         if (!std.math.isFinite(hz) or hz <= 0) return;
         self.desired_frame_ns = hzToNs(hz);
         self.resetTimingState(nowNs(self.io));
     }
 
+    /// Set software frame cap in Hz. `0` disables the cap.
     pub fn setFrameCap(self: *FramePacer, hz: f64) void {
         if (!std.math.isFinite(hz) or hz <= 0) {
             self.frame_cap_hz = 0;
@@ -230,6 +307,8 @@ pub const FramePacer = struct {
         self.frame_cap_ns = hzToNs(hz);
     }
 
+    /// Set display refresh rate used by vsync snapping.
+    /// Returns false when the rate is unknown or invalid.
     pub fn setDisplayRefreshRate(self: *FramePacer, rate: wiox.display.RefreshRate) bool {
         const hz = refreshRateHz(rate);
         if (hz <= 0) {
@@ -242,28 +321,33 @@ pub const FramePacer = struct {
         return true;
     }
 
+    /// Detect refresh rate for the display containing `window`.
     pub fn detectDisplayRefreshRate(self: *FramePacer, window: *wio.Window) bool {
         const display = wiox.display.getWindowDisplay(window) orelse return false;
         defer display.release();
         return self.setDisplayRefreshRate(display.getRefreshRate());
     }
 
+    /// Detect display refresh and use it as the software frame cap.
     pub fn capToDisplay(self: *FramePacer, window: *wio.Window) bool {
         if (!self.detectDisplayRefreshRate(window)) return false;
         self.setFrameCap(self.display_rate_hz);
         return true;
     }
 
+    /// Detect display refresh and use it as the fixed update rate.
     pub fn syncTickRateToDisplay(self: *FramePacer, window: *wio.Window) bool {
         if (!self.detectDisplayRefreshRate(window)) return false;
         self.setTickRate(self.display_rate_hz);
         return true;
     }
 
+    /// Clear accumulator/timing discontinuities without clearing statistics.
     pub fn resync(self: *FramePacer) void {
         self.resetTimingState(nowNs(self.io));
     }
 
+    /// Clear frame-time statistics.
     pub fn resetStats(self: *FramePacer) void {
         self.frame_durations = .{0} ** stats_window;
         self.frame_duration_count = 0;
@@ -271,6 +355,7 @@ pub const FramePacer = struct {
         self.worst_frame_duration_ns = 0;
     }
 
+    /// Clear duplicate/catch-up/drift counters.
     pub fn resetPacingStats(self: *FramePacer) void {
         self.zero_update_frames = 0;
         self.multi_update_frames = 0;
@@ -280,12 +365,14 @@ pub const FramePacer = struct {
         self.updates_at_reset = self.total_updates;
     }
 
+    /// Clear timing, frame-time stats, and pacing-quality stats.
     pub fn resetAll(self: *FramePacer) void {
         self.resync();
         self.resetStats();
         self.resetPacingStats();
     }
 
+    /// Snapshot frame-time statistics.
     pub fn stats(self: *const FramePacer) Stats {
         const count = self.frame_duration_count;
         if (count == 0) return .{};
@@ -310,6 +397,7 @@ pub const FramePacer = struct {
         };
     }
 
+    /// Snapshot pacing-quality and sleep-quality metrics.
     pub fn quality(self: *const FramePacer) Quality {
         const duplicate = if (self.total_frames > 0)
             @as(f64, @floatFromInt(self.zero_update_frames)) / @as(f64, @floatFromInt(self.total_frames))

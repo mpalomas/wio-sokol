@@ -51,6 +51,69 @@ Important configuration:
 - `SleepMode.hybrid` sleeps passively for most of the remaining cap interval and
   spins for the final short interval.
 
+## Public API Reference
+
+Configuration types:
+
+- `Mode.locked`: run zero updates or exactly `update_multiplicity` updates once
+  enough time accumulates.
+- `Mode.unlocked`: drain all available fixed updates and use
+  `interpolationAlpha()` for render interpolation.
+- `SleepMode.none`: no cap wait.
+- `SleepMode.passive`: only `std.Io.sleep`; low CPU, lower precision.
+- `SleepMode.hybrid`: passive sleep plus final spin; recommended software cap.
+- `SleepMode.spin`: busy-wait only; useful for diagnostics, high CPU cost.
+- `Smoothing.none`: no delta filtering.
+- `Smoothing.rolling`: deterministic rolling average with residual correction.
+- `Smoothing.ema`: Sokol-style exponential moving average.
+
+`Desc` fields:
+
+- `tick_rate_hz`: fixed simulation update rate. Defaults to `60.0`.
+- `mode`: locked or unlocked update scheduling. Defaults to `.locked`.
+- `update_multiplicity`: locked-mode update count. Defaults to `1`.
+- `vsync_snap`: enables snapping to detected display harmonics. Defaults to `true`.
+- `smoothing`: delta filter. Defaults to 4-sample rolling average.
+- `snap_tolerance_ns`: harmonic snap tolerance. Defaults to `200us`.
+- `frame_cap_hz`: software frame cap; `0` disables. Defaults to `0`.
+- `sleep_mode`: cap wait strategy. Defaults to `.hybrid`.
+- `passive_sleep_margin_ns`: initial/floor spin margin before deadline. Defaults
+  to `1ms`.
+- `spin_threshold_ns`: minimum final spin interval. Defaults to `200us`.
+
+`FramePacer` lifecycle and loop functions:
+
+- `init(io, desc)`: create a pacer.
+- `beginFrame()`: measure/snap/smooth frame time and prepare updates.
+- `shouldUpdate()`: consume one fixed update when available.
+- `endFrame()`: record quality metrics and enforce the software cap.
+- `resync()`: clear timing discontinuities without clearing stats.
+- `resetStats()`: clear frame-time statistics.
+- `resetPacingStats()`: clear duplicate/catch-up/drift counters.
+- `resetAll()`: reset timing, frame-time stats, and pacing stats.
+
+Timing and control functions:
+
+- `fixedDt()`: fixed update step in seconds.
+- `frameDt()`: smoothed/snapped frame delta in seconds.
+- `rawDt()`: measured raw frame delta in seconds.
+- `interpolationAlpha()`: accumulator remainder for unlocked render interpolation.
+- `fps()`: instantaneous FPS from smoothed frame delta.
+- `tickRate()`: current fixed update rate in Hz.
+- `updateCount()`: fixed updates available for the current frame.
+- `setTickRate(hz)`: change fixed update rate and resync.
+- `setFrameCap(hz)`: set or disable software frame cap.
+- `setDisplayRefreshRate(rate)`: manually set display refresh for snapping.
+- `detectDisplayRefreshRate(window)`: query wio-extra display refresh.
+- `capToDisplay(window)`: detect display refresh and use it as frame cap.
+- `syncTickRateToDisplay(window)`: detect display refresh and use it as tick rate.
+
+Metric snapshots:
+
+- `stats()`: average FPS, average frame time, low 1%, low 0.1%, worst frame time,
+  frame-time stddev, and sample count.
+- `quality()`: frame/update counts, duplicate/catch-up counts, drift, and display Hz.
+
 ## Timing Pipeline
 
 Each `beginFrame()`:
@@ -138,32 +201,6 @@ targets `16.667ms`, but default hybrid sleep can stabilize around `59.0fps`
 spinning. This is expected for `std.Io.sleep`/`nanosleep`-style waits on macOS:
 if the kernel wakes the thread late, the final spin phase cannot recover the
 missed time.
-
-The pacer should learn passive-sleep overshoot over time instead of relying on a
-fixed margin. Track, per frame cap sleep:
-
-```zig
-requested_passive_sleep_ns
-passive_sleep_start_ns
-passive_sleep_end_ns
-passive_overshoot_ns = (passive_sleep_end_ns - passive_sleep_start_ns) - requested_passive_sleep_ns
-```
-
-Maintain an EMA and high-percentile window of positive overshoot. Use the larger
-of configured `spin_threshold_ns`, overshoot EMA plus safety margin, and a low
-percentile such as p90/p95 as the passive-to-spin cutoff. Clamp the learned
-margin to a configurable range, for example `0.2ms..4ms`, so transient hitches do
-not permanently turn the pacer into a busy-wait loop.
-
-Expose overshoot diagnostics in `Quality` or a separate sleep stats snapshot:
-
-- average passive overshoot in seconds
-- worst passive overshoot in the stats window
-- learned spin margin in seconds
-- passive sleep count and late wake-up ratio
-
-This adaptive path is especially relevant on macOS laptops, where power state,
-background load, and VRR behavior can shift wake-up precision during a session.
 
 ## Verification
 
