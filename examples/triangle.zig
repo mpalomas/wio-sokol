@@ -37,6 +37,7 @@ var pacer: frame_pacing.FramePacer = undefined;
 const desired_framebuffer_size: wio.Size = .{ .width = 1280, .height = 720 };
 var framebuffer_size: wio.Size = desired_framebuffer_size;
 var fps_last_report_ms: ?i64 = null;
+var fps_frame_count: u32 = 0;
 
 pub fn main(init: std.process.Init) !void {
     allocator = init.gpa;
@@ -91,7 +92,7 @@ pub fn main(init: std.process.Init) !void {
     errdefer context.destroy();
 
     window.glMakeContextCurrent(context);
-    window.glSwapInterval(0);
+    window.glSwapInterval(1);
 
     sg.setup(.{
         .environment = wio_sokol_gl.environment(gl_options),
@@ -104,10 +105,11 @@ pub fn main(init: std.process.Init) !void {
     initTriangle();
     pacer = frame_pacing.FramePacer.init(io, .{
         .tick_rate_hz = 60.0,
-        .mode = .unlocked,
+        .mode = .locked,
         .frame_cap_hz = 60.0,
-        .sleep_mode = .hybrid,
-        .passive_sleep_margin_ns = 2 * std.time.ns_per_ms,
+        // spin seems to be accurate on macOS, others not really
+        .sleep_mode = .spin,
+        // .passive_sleep_margin_ns = 2 * std.time.ns_per_ms,
     });
     if (pacer.detectDisplayRefreshRate(&window)) {
         const quality = pacer.quality();
@@ -115,6 +117,7 @@ pub fn main(init: std.process.Init) !void {
     } else {
         std.log.info("frame pacer display rate: unavailable", .{});
     }
+    // pacer.enabled = false;
 
     try wio.run(loop);
 }
@@ -266,9 +269,9 @@ fn loop() !bool {
         }
     }
 
-    while (pacer.shouldUpdate()) {
-        // Fixed-rate simulation would run here. The triangle has no game state.
-    }
+    // while (pacer.shouldUpdate()) {
+    // Fixed-rate simulation would run here. The triangle has no game state.
+    // }
 
     window.glMakeContextCurrent(context);
     drawTriangle();
@@ -317,17 +320,24 @@ fn logFps() void {
     const now = std.Io.Clock.awake.now(io).toMilliseconds();
     if (fps_last_report_ms == null) fps_last_report_ms = now;
 
+    fps_frame_count += 1;
     const elapsed_ms = now - fps_last_report_ms.?;
     if (elapsed_ms >= 1_000) {
-        const stats = pacer.stats();
-        const quality = pacer.quality();
-        std.log.info("fps {d:.1} frame {d:.3}ms low1 {d:.1} dup {d:.3}% drift {d:.3}ms", .{
-            stats.avg_fps,
-            stats.avg_frame_time_s * 1_000.0,
-            stats.low1_fps,
-            quality.unexpected_duplicate_ratio * 100.0,
-            quality.drift_seconds * 1_000.0,
-        });
+        if (pacer.enabled == false) {
+            const fps = @divTrunc(@as(i64, fps_frame_count) * 1_000, elapsed_ms);
+            std.log.info("fps {d:.2}", .{fps});
+            fps_frame_count = 0;
+        } else {
+            const stats = pacer.stats();
+            const quality = pacer.quality();
+            std.log.info("fps {d:.2} frame {d:.3}ms low1 {d:.1} dup {d:.3}% drift {d:.3}ms", .{
+                stats.avg_fps,
+                stats.avg_frame_time_s * 1_000.0,
+                stats.low1_fps,
+                quality.unexpected_duplicate_ratio * 100.0,
+                quality.drift_seconds * 1_000.0,
+            });
+        }
         fps_last_report_ms = now;
     }
 }

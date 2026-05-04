@@ -140,6 +140,7 @@ pub const Quality = struct {
 
 /// Stateful frame pacer for a manual game/render loop.
 pub const FramePacer = struct {
+    enabled: bool = true,
     io: std.Io,
     mode: Mode,
     update_multiplicity: u32,
@@ -213,6 +214,7 @@ pub const FramePacer = struct {
     /// Begin a new frame: measure elapsed time, snap/smooth it, update the
     /// accumulator, and precompute how many fixed updates are available.
     pub fn beginFrame(self: *FramePacer) void {
+        if (self.enabled == false) return;
         const now = nowNs(self.io);
         const delta = now - self.previous_ns;
         self.beginFrameWithDelta(delta);
@@ -223,6 +225,7 @@ pub const FramePacer = struct {
     /// Return true while a fixed simulation update should run.
     /// Each true result consumes one fixed timestep from the accumulator.
     pub fn shouldUpdate(self: *FramePacer) bool {
+        if (self.enabled == false) return false;
         switch (self.mode) {
             .unlocked => {
                 if (self.accumulator_ns >= self.desired_frame_ns) {
@@ -247,6 +250,7 @@ pub const FramePacer = struct {
 
     /// Finish a frame: record pacing quality and enforce the configured frame cap.
     pub fn endFrame(self: *FramePacer) void {
+        if (self.enabled == false) return;
         self.recordPacingQuality();
         self.sleepToFrameCap();
     }
