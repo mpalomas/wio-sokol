@@ -1,9 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const wio = @import("wio");
 const wiox = @import("wiox");
 const sokol = @import("sokol");
 const wio_sokol_gl = @import("wio_sokol_gl");
-const frame_pacing = @import("frame_pacing");
+const sokol_pacing = @import("sokol_pacing");
 const sg = sokol.gfx;
 const slog = sokol.log;
 const shd = @import("shaders/triangle.glsl.zig");
@@ -28,12 +29,15 @@ const state = struct {
     var pipeline: sg.Pipeline = .{};
 };
 
+const use_display_link = builtin.os.tag == .macos;
+
 var allocator: std.mem.Allocator = undefined;
 var io: std.Io = undefined;
 
 var window: wio.Window = undefined;
 var context: wio.GlContext = undefined;
-var pacer: frame_pacing.FramePacer = undefined;
+var clock: sokol_pacing.FrameClock = undefined;
+var display_link: ?wio.DisplayLink = null;
 const desired_framebuffer_size: wio.Size = .{ .width = 1280, .height = 720 };
 var framebuffer_size: wio.Size = desired_framebuffer_size;
 var fps_last_report_ms: ?i64 = null;
@@ -103,21 +107,32 @@ pub fn main(init: std.process.Init) !void {
     std.log.info("sokol backend: {}", .{sg.queryBackend()});
 
     initTriangle();
-    pacer = frame_pacing.FramePacer.init(io, .{
-        .tick_rate_hz = 60.0,
-        .mode = .locked,
-        .frame_cap_hz = 60.0,
-        // spin seems to be accurate on macOS, others not really
-        .sleep_mode = .spin,
-        // .passive_sleep_margin_ns = 2 * std.time.ns_per_ms,
+    clock = sokol_pacing.FrameClock.init(io, .{
+        .target = .{ .hz = 60.0 },
+        .sleep_mode = .hybrid,
+        .passive_sleep_margin_ns = 2 * std.time.ns_per_ms,
     });
-    if (pacer.detectDisplayRefreshRate(&window)) {
-        const quality = pacer.quality();
-        std.log.info("frame pacer display rate: {d:.4}Hz", .{quality.display_rate_hz});
+    if (clock.detectDisplayRefreshRate(&window)) {
+        const info = clock.info();
+        std.log.info("frame clock display rate: {d:.4}Hz target {d:.4}Hz repeat {}", .{
+            info.display_hz,
+            info.effective_hz,
+            info.repeat_count,
+        });
     } else {
-        std.log.info("frame pacer display rate: unavailable", .{});
+        std.log.info("frame clock display rate: unavailable", .{});
     }
-    // pacer.enabled = false;
+
+    if (use_display_link) {
+        const clock_info = clock.info();
+        display_link = try window.createDisplayLink(.{
+            .preferred_frame_rate_hz = clock_info.effective_hz,
+        });
+        display_link.?.start();
+        std.log.info("macOS display link started at preferred {d:.4}Hz", .{clock_info.effective_hz});
+    } else {
+        std.log.info("using measured frame clock loop", .{});
+    }
 
     try wio.run(loop);
 }
@@ -247,19 +262,78 @@ fn scaledAxis(logical: u16, scale: f64) u16 {
 }
 
 fn loop() !bool {
-    pacer.beginFrame();
+    if (!use_display_link) {
+        return measuredLoop();
+    }
+    return displayLinkLoop();
+}
 
+fn measuredLoop() !bool {
+    clock.beginFrame();
+
+    var should_draw = true;
+    if (!handleQueuedEvents(&should_draw, null)) {
+        return false;
+    }
+
+    if (should_draw) {
+        window.glMakeContextCurrent(context);
+        drawTriangle();
+        window.glSwapBuffers();
+        clock.endFrame(&window);
+    }
+
+    return true;
+}
+
+fn displayLinkLoop() !bool {
+    var should_draw = false;
+    var has_display_link_timing = false;
+
+    if (!handleQueuedEvents(&should_draw, &has_display_link_timing)) {
+        return false;
+    }
+
+    if (!should_draw) {
+        wio.wait(.{});
+        if (!handleQueuedEvents(&should_draw, &has_display_link_timing)) {
+            return false;
+        }
+    }
+
+    if (should_draw) {
+        if (!has_display_link_timing) {
+            clock.beginFrame();
+        }
+        window.glMakeContextCurrent(context);
+        drawTriangle();
+        window.glSwapBuffers();
+        clock.endFrame(&window);
+    }
+
+    return true;
+}
+
+fn handleQueuedEvents(should_draw: *bool, has_display_link_timing: ?*bool) bool {
     while (window.getEvent()) |event| {
         switch (event) {
             .close => {
-                sg.shutdown();
-                context.destroy();
-                window.destroy();
-                wio.deinit();
+                shutdown();
                 return false;
+            },
+            .display_link => |frame| {
+                if (has_display_link_timing) |timing| {
+                    clock.beginFrameWithDisplayLink(frame);
+                    should_draw.* = true;
+                    timing.* = true;
+                }
+            },
+            .draw => {
+                should_draw.* = true;
             },
             .size_physical => |size| {
                 framebuffer_size = size;
+                should_draw.* = true;
                 std.log.info("framebuffer_size {}x{}", .{
                     size.width,
                     size.height,
@@ -268,16 +342,21 @@ fn loop() !bool {
             else => {},
         }
     }
-
-    // while (pacer.shouldUpdate()) {
-    // Fixed-rate simulation would run here. The triangle has no game state.
-    // }
-
-    window.glMakeContextCurrent(context);
-    drawTriangle();
-    window.glSwapBuffers();
-    pacer.endFrame();
     return true;
+}
+
+fn shutdown() void {
+    if (use_display_link) {
+        if (display_link) |*link| {
+            link.stop();
+            link.destroy();
+            display_link = null;
+        }
+    }
+    sg.shutdown();
+    context.destroy();
+    window.destroy();
+    wio.deinit();
 }
 
 fn initTriangle() void {
@@ -323,21 +402,20 @@ fn logFps() void {
     fps_frame_count += 1;
     const elapsed_ms = now - fps_last_report_ms.?;
     if (elapsed_ms >= 1_000) {
-        if (pacer.enabled == false) {
-            const fps = @divTrunc(@as(i64, fps_frame_count) * 1_000, elapsed_ms);
-            std.log.info("fps {d:.2}", .{fps});
-            fps_frame_count = 0;
-        } else {
-            const stats = pacer.stats();
-            const quality = pacer.quality();
-            std.log.info("fps {d:.2} frame {d:.3}ms low1 {d:.1} dup {d:.3}% drift {d:.3}ms", .{
-                stats.avg_fps,
-                stats.avg_frame_time_s * 1_000.0,
-                stats.low1_fps,
-                quality.unexpected_duplicate_ratio * 100.0,
-                quality.drift_seconds * 1_000.0,
-            });
-        }
+        const info = clock.info();
+        const decision = clock.presentationDecision();
+        const counted_fps = @as(f64, @floatFromInt(fps_frame_count)) * 1_000.0 / @as(f64, @floatFromInt(elapsed_ms));
+        std.log.info("fps {d:.2} frame {d:.3}ms raw {d:.3}ms display {d:.4}Hz target {d:.4}Hz vsync {} repeat {} wait {d:.3}ms", .{
+            counted_fps,
+            info.frame_duration_s * 1_000.0,
+            info.unfiltered_frame_duration_s * 1_000.0,
+            info.display_hz,
+            info.effective_hz,
+            info.vsync_state,
+            info.repeat_count,
+            decision.software_wait_s * 1_000.0,
+        });
+        fps_frame_count = 0;
         fps_last_report_ms = now;
     }
 }
